@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lijekovi Tracker - Praćenje i naručivanje lijekova</title>
+    <meta name="description" content="Mobilna aplikacija za praćenje zaliha lijekova i ponovljivih recepata na mobitelu.">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Lijekovi">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header & Status Dashboard -->
+        <header class="app-header">
+            <div class="brand">
+                <div class="brand-logo">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4.5 10.5C3.67 10.5 3 11.17 3 12s.67 1.5 1.5 1.5h15c.83 0 1.5-.67 1.5-1.5s-.67-1.5-1.5-1.5h-15z" fill="currentColor"/>
+                        <path d="M10.5 4.5C10.5 3.67 11.17 3 12 3s1.5.67 1.5 1.5v15c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5v-15z" fill="currentColor"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1>Lijekovi Tracker</h1>
+                    <p class="subtitle">Samsung Galaxy A23 • Android 14 Edition</p>
+                </div>
+            </div>
+
+            <!-- Install PWA Banner (Appears when installable) -->
+            <div id="pwaInstallBanner" class="install-banner hidden">
+                <div class="install-text">
+                    <strong>Instaliraj aplikaciju</strong>
+                    <span>Dodajte aplikaciju na početni zaslon mobitela</span>
+                </div>
+                <button id="installAppBtn" class="btn btn-install">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                    </svg>
+                    Instaliraj
+                </button>
+            </div>
+
+            <!-- Stats Bar -->
+            <div class="dashboard-grid">
+                <div class="dash-card">
+                    <span class="dash-label">Današnji datum</span>
+                    <span class="dash-value" id="todayDate">--.--.----.</span>
+                </div>
+                <div class="dash-card">
+                    <span class="dash-label">Registrirani lijekovi</span>
+                    <span class="dash-value" id="medsCount">0 / 10</span>
+                </div>
+                <div class="dash-card span-full" id="statusCard">
+                    <div class="status-indicator icon-ok" id="statusIcon"></div>
+                    <div class="status-content">
+                        <span class="dash-label">Status zaliha</span>
+                        <span class="dash-status-text" id="statusText">Sve zalihe lijekova su stabilne.</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Actions Toolbar -->
+        <section class="toolbar">
+            <button id="openAddModalBtn" class="btn btn-primary btn-lg">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Dodaj novi lijek
+            </button>
+
+            <div class="secondary-actions">
+                <button id="exportDataBtn" class="btn btn-secondary btn-icon" title="Spremi siguronosnu kopiju (Izvoz)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                    </svg>
+                    Izvoz
+                </button>
+                <button id="importDataBtn" class="btn btn-secondary btn-icon" title="Učitaj podatke (Uvoz)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                    </svg>
+                    Uvoz
+                </button>
+                <input type="file" id="importFileInput" accept=".json" style="display: none;">
+            </div>
+        </section>
+
+        <!-- Medications List Container -->
+        <main class="meds-container">
+            <h2 class="section-title">Pregled zaliha i recepata</h2>
+            <div id="medsList" class="meds-list">
+                <!-- Dynamically populated by JS -->
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <p>Lijekovi Tracker &copy; 2026 • Offline Podrška Aktivna</p>
+        </footer>
+    </div>
+
+    <!-- Modal: Add / Edit Medication -->
+    <div id="medModal" class="modal-backdrop hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modalTitle">Dodaj novi lijek</h3>
+                <button id="closeModalBtn" class="btn-close">&times;</button>
+            </div>
+            <form id="medForm" class="modal-form">
+                <input type="hidden" id="medId">
+
+                <div class="form-group">
+                    <label for="nazivInput">Naziv lijeka *</label>
+                    <input type="text" id="nazivInput" placeholder="npr. Lekadol 500mg" required maxlength="60">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="datumInput">Datum početka</label>
+                        <input type="date" id="datumInput" required>
+                        <small class="help-text">Zadano: danas</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tableteInput">Broj tableta *</label>
+                        <input type="number" id="tableteInput" min="1" max="500" placeholder="30" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="trajanjeInput">Trajanje (dana) *</label>
+                        <input type="number" id="trajanjeInput" min="1" max="365" placeholder="30" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="maxPodizanjaInput">Max podizanja na recept *</label>
+                        <select id="maxPodizanjaInput" required>
+                            <option value="1">1 (Jednokratni recept)</option>
+                            <option value="2">2 podizanja</option>
+                            <option value="3">3 podizanja</option>
+                            <option value="4">4 podizanja</option>
+                            <option value="5">5 podizanja</option>
+                            <option value="6">6 podizanja (Ponovljivi)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group" id="trenutnoPodizanjeGroup">
+                    <label for="trenutnoPodizanjeInput">Trenutno podizanje</label>
+                    <select id="trenutnoPodizanjeInput">
+                        <option value="1">1. podizanje</option>
+                        <option value="2">2. podizanje</option>
+                        <option value="3">3. podizanje</option>
+                        <option value="4">4. podizanje</option>
+                        <option value="5">5. podizanje</option>
+                        <option value="6">6. podizanje</option>
+                    </select>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" id="cancelMedBtn" class="btn btn-secondary">Odustani</button>
+                    <button type="submit" class="btn btn-primary">Spremi lijek</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Refill / Evidentiranje podizanja -->
+    <div id="refillModal" class="modal-backdrop hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Obnova zalihe / Podizanje lijeka</h3>
+                <button id="closeRefillModalBtn" class="btn-close">&times;</button>
+            </div>
+            <div class="refill-content" id="refillContent">
+                <!-- Dynamically filled by JS -->
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // Register PWA Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('SW registriran:', reg.scope))
+                    .catch(err => console.error('SW greška:', err));
+            });
+        }
+    </script>
+</body>
+</html>
