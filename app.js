@@ -2,26 +2,31 @@
 
 const MAX_LIJEKOVA = 10;
 const STORAGE_KEY = 'lijekovi_baza_v1';
+const INITIALIZED_KEY = 'lijekovi_initialized_v1';
 
-// Initial default state if empty
+// Initial default state if first time open
 const DEFAULT_LIJEKOVI = [
     {
         id: 1,
         naziv: 'Lekadol 500mg',
         datumPocetka: getTodayIsoString(),
+        datumSljedecegIzdavanja: addDaysToDate(getTodayIsoString(), 30),
         brojTableta: 30,
         trajanjeDana: 30,
         maxPodizanja: 3,
-        trenutnoPodizanje: 1
+        trenutnoPodizanje: 1,
+        log: 'Uzimati po 1 tabletu u slučaju bolova ili povišene temperature.'
     },
     {
         id: 2,
         naziv: 'Pramin 10mg',
         datumPocetka: getIsoStringMinusDays(25),
+        datumSljedecegIzdavanja: addDaysToDate(getIsoStringMinusDays(25), 30),
         brojTableta: 30,
         trajanjeDana: 30,
         maxPodizanja: 2,
-        trenutnoPodizanje: 2
+        trenutnoPodizanje: 2,
+        log: 'Uzimati prije obroka prema uputi liječnika.'
     }
 ];
 
@@ -54,6 +59,7 @@ function formatDateHr(isoString) {
 }
 
 function addDaysToDate(isoString, days) {
+    if (!isoString) return getTodayIsoString();
     const parts = isoString.split('-');
     const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
     date.setDate(date.getDate() + parseInt(days));
@@ -64,37 +70,102 @@ function addDaysToDate(isoString, days) {
     return `${year}-${month}-${day}`;
 }
 
-function getDaysRemaining(expirationIso) {
+function getDaysRemaining(targetIso) {
+    if (!targetIso) return 0;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const parts = expirationIso.split('-');
-    const expDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-    expDate.setHours(0, 0, 0, 0);
+    const parts = targetIso.split('-');
+    const targetDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    targetDate.setHours(0, 0, 0, 0);
 
-    const diffTime = expDate - today;
+    const diffTime = targetDate - today;
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 }
 
-// Storage Operations
-function loadLijekovi() {
+// Storage Operations (Robust persistence across reload/export/server sync)
+async function loadLijekovi() {
+    // 1. Try local server API first
+    try {
+        const response = await fetch('/api/lijekovi', { cache: 'no-store' });
+        if (response.ok) {
+            const serverData = await response.json();
+            if (Array.isArray(serverData) && serverData.length > 0) {
+                lijekovi = sanitizeData(serverData);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(lijekovi));
+                localStorage.setItem(INITIALIZED_KEY, 'true');
+                renderApp();
+                return;
+            }
+        }
+    } catch (e) {
+        console.log('Poslužiteljski API nije dostupan ili je prazan, koristi se lokalni spremnik.');
+    }
+
+    // 2. Try LocalStorage
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
+    const isInit = localStorage.getItem(INITIALIZED_KEY);
+
+    if (stored !== null) {
         try {
-            lijekovi = JSON.parse(stored);
+            lijekovi = sanitizeData(JSON.parse(stored));
         } catch (e) {
-            console.error('Greška pri učitavanju spremljenih podataka:', e);
+            console.error('Greška pri čitanju spremljenih podataka:', e);
             lijekovi = [...DEFAULT_LIJEKOVI];
         }
-    } else {
+    } else if (!isInit) {
+        // First time opening app
         lijekovi = [...DEFAULT_LIJEKOVI];
+        localStorage.setItem(INITIALIZED_KEY, 'true');
         saveLijekovi();
+        return;
+    } else {
+        // User initialized before and explicitly removed all items
+        lijekovi = [];
     }
+
+    renderApp();
+}
+
+function sanitizeData(dataList) {
+    return dataList.map(med => ({
+        id: med.id,
+        naziv: med.naziv || 'Nepoznati lijek',
+        datumPocetka: med.datumPocetka || getTodayIsoString(),
+        datumSljedecegIzdavanja: med.datumSljedecegIzdavanja || addDaysToDate(med.datumPocetka || getTodayIsoString(), med.trajanjeDana || 30),
+        brojTableta: med.brojTableta || 30,
+        trajanjeDana: med.trajanjeDana || 30,
+        maxPodizanja: med.maxPodizanja || 3,
+        trenutnoPodizanje: med.trenutnoPodizanje || 1,
+        log: med.log || ''
+    }));
 }
 
 function saveLijekovi() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(lijekovi));
+    localStorage.setItem(INITIALIZED_KEY, 'true');
+
+    // Sync to local server file asynchronously
+    fetch('/api/lijekovi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(lijekovi)
+    }).catch(err => console.log('Automatska pohrana na server nije aktivna.'));
+
     renderApp();
+}
+
+// Notifications Helper
+function checkAndRequestNotificationPermission() {
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+}
+
+function triggerBrowserNotification(title, body) {
+    if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, { body, icon: 'icon-192.png' });
+    }
 }
 
 // UI Rendering Logic
@@ -105,19 +176,29 @@ function renderApp() {
 
 function renderHeaderStats() {
     const todayFormatted = formatDateHr(getTodayIsoString());
-    document.getElementById('todayDate').textContent = todayFormatted;
-    document.getElementById('medsCount').textContent = `${lijekovi.length} / ${MAX_LIJEKOVA}`;
+    const dateEl = document.getElementById('todayDate');
+    if (dateEl) dateEl.textContent = todayFormatted;
+
+    const countEl = document.getElementById('medsCount');
+    if (countEl) countEl.textContent = `${lijekovi.length} / ${MAX_LIJEKOVA}`;
 
     let urgentWarnings = 0;
     let expiredCount = 0;
+    let refillSoonCount = 0;
 
     lijekovi.forEach(m => {
         const expDate = addDaysToDate(m.datumPocetka, m.trajanjeDana);
-        const days = getDaysRemaining(expDate);
-        if (days < 0) {
+        const daysStockLeft = getDaysRemaining(expDate);
+        const daysNextRefillLeft = getDaysRemaining(m.datumSljedecegIzdavanja);
+
+        if (daysStockLeft < 0) {
             expiredCount++;
-        } else if (days <= 7) {
+        } else if (daysStockLeft <= 7) {
             urgentWarnings++;
+        }
+
+        if (daysNextRefillLeft <= 3 && m.trenutnoPodizanje < m.maxPodizanja) {
+            refillSoonCount++;
         }
     });
 
@@ -125,13 +206,15 @@ function renderHeaderStats() {
     const statusIcon = document.getElementById('statusIcon');
     const statusText = document.getElementById('statusText');
 
-    if (expiredCount > 0 || urgentWarnings > 0) {
-        const totalAlerts = expiredCount + urgentWarnings;
+    if (expiredCount > 0 || urgentWarnings > 0 || refillSoonCount > 0) {
         statusCard.className = 'dash-card span-full';
         
         if (expiredCount > 0) {
             statusIcon.className = 'status-indicator icon-danger';
-            statusText.innerHTML = `<span style="color: var(--danger)">[ UPOZORENJE ] ${totalAlerts} lijek/a istekao ili pri kraju zaliha!</span>`;
+            statusText.innerHTML = `<span style="color: var(--danger)">[ UPOZORENJE ] ${expiredCount} lijek/a istekao! Napravite obnovu zaliha.</span>`;
+        } else if (refillSoonCount > 0) {
+            statusIcon.className = 'status-indicator icon-warning';
+            statusText.innerHTML = `<span style="color: var(--warning)">[ NOTIFIKACIJA ] ${refillSoonCount} lijek/a stiže za izdavanje u sljedeća 3 dana!</span>`;
         } else {
             statusIcon.className = 'status-indicator icon-warning';
             statusText.innerHTML = `<span style="color: var(--warning)">[ UPOZORENJE ] ${urgentWarnings} lijek/a treba naručiti u sljedećih 7 dana!</span>`;
@@ -139,12 +222,13 @@ function renderHeaderStats() {
     } else {
         statusCard.className = 'dash-card span-full';
         statusIcon.className = 'status-indicator icon-ok';
-        statusText.textContent = 'Sve zalihe lijekova su stabilne.';
+        statusText.textContent = 'Sve zalihe lijekova i ponovljivi recepti su stabilni.';
     }
 }
 
 function renderMedsList() {
     const container = document.getElementById('medsList');
+    if (!container) return;
     container.innerHTML = '';
 
     if (lijekovi.length === 0) {
@@ -161,9 +245,10 @@ function renderMedsList() {
         return;
     }
 
-    lijekovi.forEach((med, index) => {
+    lijekovi.forEach((med) => {
         const expDateIso = addDaysToDate(med.datumPocetka, med.trajanjeDana);
         const daysLeft = getDaysRemaining(expDateIso);
+        const daysNextRefill = getDaysRemaining(med.datumSljedecegIzdavanja);
         
         let cardClass = 'med-card';
         let badgeClass = 'badge-ok';
@@ -176,7 +261,7 @@ function renderMedsList() {
             badgeClass = 'badge-danger';
             badgeText = 'ISTEKLO!';
             progressFillClass = 'fill-danger';
-            statusNotice = '<div style="color: var(--danger); font-weight: bold; font-size: 0.8rem; margin-top: 4px;">⚠️ Zalihe su potrošene!</div>';
+            statusNotice = '<div style="color: var(--danger); font-weight: bold; font-size: 0.8rem; margin-top: 4px;">⚠️ Zalihe su potrošened!</div>';
         } else if (daysLeft <= 7) {
             cardClass += ' warning-card';
             badgeClass = 'badge-warning';
@@ -190,10 +275,30 @@ function renderMedsList() {
             }
         }
 
+        // Check 3 days before next refill date notification
+        let refillNoticeBadge = '';
+        if (daysNextRefill <= 3 && med.trenutnoPodizanje < med.maxPodizanja) {
+            refillNoticeBadge = `
+                <div style="background-color: var(--warning-bg); border: 1px solid var(--warning); border-radius: 6px; padding: 6px 10px; margin-top: 6px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.1rem;">🔔</span>
+                    <span style="color: var(--warning); font-weight: 600; font-size: 0.82rem;">
+                        ${daysNextRefill < 0 ? 'Sljedeće izdavanje je dospjelo!' : `Sljedeće izdavanje za ${daysNextRefill} dana (${formatDateHr(med.datumSljedecegIzdavanja)})`}
+                    </span>
+                </div>
+            `;
+        }
+
         // Percentage for progress bar
         const totalDuration = Math.max(med.trajanjeDana, 1);
-        const elapsed = totalDuration - Math.max(daysLeft, 0);
         const percentRemaining = Math.max(0, Math.min(100, Math.round((daysLeft / totalDuration) * 100)));
+
+        // Log snippet HTML (2-3 lines display)
+        const logHtml = med.log ? `
+            <div class="med-log-box" style="margin-top: 6px;">
+                <div class="med-log-title">Napomena / Log:</div>
+                <div>${escapeHtml(med.log)}</div>
+            </div>
+        ` : '';
 
         const cardEl = document.createElement('div');
         cardEl.className = cardClass;
@@ -217,6 +322,7 @@ function renderMedsList() {
                     <div class="progress-fill ${progressFillClass}" style="width: ${percentRemaining}%"></div>
                 </div>
                 ${statusNotice}
+                ${refillNoticeBadge}
             </div>
 
             <div class="med-details-grid">
@@ -229,8 +335,8 @@ function renderMedsList() {
                     <span class="detail-value">${formatDateHr(expDateIso)}</span>
                 </div>
                 <div class="detail-item">
-                    <span class="detail-label">Pakiranje:</span>
-                    <span class="detail-value">${med.brojTableta} tab. (${med.trajanjeDana} d)</span>
+                    <span class="detail-label">Sljedeće izdavanje:</span>
+                    <span class="detail-value" style="color: ${daysNextRefill <= 3 ? 'var(--warning)' : 'inherit'}">${formatDateHr(med.datumSljedecegIzdavanja)}</span>
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">Recept podizanje:</span>
@@ -239,6 +345,8 @@ function renderMedsList() {
                     </span>
                 </div>
             </div>
+
+            ${logHtml}
 
             <div class="med-actions">
                 <button class="btn btn-sm btn-success" onclick="openRefillModal(${med.id})">
@@ -262,7 +370,8 @@ function renderMedsList() {
 }
 
 function escapeHtml(str) {
-    return str.replace(/[&<>"']/g, function (m) {
+    if (!str) return '';
+    return String(str).replace(/[&<>"']/g, function (m) {
         return {
             '&': '&amp;',
             '<': '&lt;',
@@ -288,18 +397,37 @@ document.getElementById('openAddModalBtn').addEventListener('click', () => {
 document.getElementById('closeModalBtn').addEventListener('click', closeModal);
 document.getElementById('cancelMedBtn').addEventListener('click', closeModal);
 
+// Dynamic update of default next refill date when datumPocetka or trajanjeDana changes
+document.getElementById('datumInput').addEventListener('change', autoUpdateNextRefillDate);
+document.getElementById('trajanjeInput').addEventListener('input', autoUpdateNextRefillDate);
+
+function autoUpdateNextRefillDate() {
+    const medId = document.getElementById('medId').value;
+    // Auto-update only for new medications
+    if (!medId) {
+        const datumPocetka = document.getElementById('datumInput').value || getTodayIsoString();
+        const trajanjeDana = parseInt(document.getElementById('trajanjeInput').value, 10) || 30;
+        document.getElementById('datumSljedecegIzdavanjaInput').value = addDaysToDate(datumPocetka, trajanjeDana);
+    }
+}
+
 function openAddModal() {
     document.getElementById('modalTitle').textContent = 'Dodaj novi lijek';
     document.getElementById('medId').value = '';
     document.getElementById('nazivInput').value = '';
-    document.getElementById('datumInput').value = getTodayIsoString();
+    
+    const today = getTodayIsoString();
+    document.getElementById('datumInput').value = today;
     document.getElementById('tableteInput').value = '30';
     document.getElementById('trajanjeInput').value = '30';
+    document.getElementById('datumSljedecegIzdavanjaInput').value = addDaysToDate(today, 30);
     document.getElementById('maxPodizanjaInput').value = '3';
     document.getElementById('trenutnoPodizanjeInput').value = '1';
+    document.getElementById('logInput').value = '';
     
     document.getElementById('trenutnoPodizanjeGroup').style.display = 'none';
     medModal.classList.remove('hidden');
+    checkAndRequestNotificationPermission();
 }
 
 function openEditModal(id) {
@@ -312,8 +440,10 @@ function openEditModal(id) {
     document.getElementById('datumInput').value = med.datumPocetka;
     document.getElementById('tableteInput').value = med.brojTableta;
     document.getElementById('trajanjeInput').value = med.trajanjeDana;
+    document.getElementById('datumSljedecegIzdavanjaInput').value = med.datumSljedecegIzdavanja || addDaysToDate(med.datumPocetka, med.trajanjeDana);
     document.getElementById('maxPodizanjaInput').value = med.maxPodizanja;
     document.getElementById('trenutnoPodizanjeInput').value = med.trenutnoPodizanje;
+    document.getElementById('logInput').value = med.log || '';
 
     document.getElementById('trenutnoPodizanjeGroup').style.display = 'flex';
     medModal.classList.remove('hidden');
@@ -331,8 +461,10 @@ medForm.addEventListener('submit', (e) => {
     const datumPocetka = document.getElementById('datumInput').value || getTodayIsoString();
     const brojTableta = parseInt(document.getElementById('tableteInput').value, 10);
     const trajanjeDana = parseInt(document.getElementById('trajanjeInput').value, 10);
+    const datumSljedecegIzdavanja = document.getElementById('datumSljedecegIzdavanjaInput').value || addDaysToDate(datumPocetka, trajanjeDana);
     const maxPodizanja = parseInt(document.getElementById('maxPodizanjaInput').value, 10);
     const trenutnoPodizanje = parseInt(document.getElementById('trenutnoPodizanjeInput').value, 10) || 1;
+    const log = document.getElementById('logInput').value.trim();
 
     if (!naziv) {
         alert('Naziv lijeka ne smije biti prazan!');
@@ -347,15 +479,16 @@ medForm.addEventListener('submit', (e) => {
                 id: parseInt(idVal, 10),
                 naziv,
                 datumPocetka,
+                datumSljedecegIzdavanja,
                 brojTableta,
                 trajanjeDana,
                 maxPodizanja,
-                trenutnoPodizanje: Math.min(trenutnoPodizanje, maxPodizanja)
+                trenutnoPodizanje: Math.min(trenutnoPodizanje, maxPodizanja),
+                log
             };
         }
     } else {
         // Add mode
-        // Find next available ID between 1 and 10
         let newId = 1;
         for (let i = 1; i <= MAX_LIJEKOVA; i++) {
             if (!lijekovi.some(m => m.id === i)) {
@@ -368,10 +501,12 @@ medForm.addEventListener('submit', (e) => {
             id: newId,
             naziv,
             datumPocetka,
+            datumSljedecegIzdavanja,
             brojTableta,
             trajanjeDana,
             maxPodizanja,
-            trenutnoPodizanje: 1
+            trenutnoPodizanje: 1,
+            log
         });
     }
 
@@ -430,6 +565,10 @@ function openRefillModal(id) {
                         <option value="6">6 podizanja (Ponovljivi)</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Datum sljedećeg izdavanja:</label>
+                    <input type="date" id="newNextRefillDateInput" value="${addDaysToDate(getTodayIsoString(), med.trajanjeDana)}">
+                </div>
                 <div class="modal-actions">
                     <button class="btn btn-secondary" onclick="closeRefillModal()">Zatvori</button>
                     <button class="btn btn-primary" onclick="confirmNewPrescription(${med.id})">
@@ -440,6 +579,7 @@ function openRefillModal(id) {
         `;
     } else {
         const nextRefill = med.trenutnoPodizanje + 1;
+        const suggestedNextRefillDate = addDaysToDate(getTodayIsoString(), med.trajanjeDana);
         content.innerHTML = `
             <div class="refill-info-card">
                 <h4 style="color: var(--success); font-size: 1.05rem;">Evidentiranje podizanja lijeka</h4>
@@ -460,6 +600,11 @@ function openRefillModal(id) {
                 </p>
             </div>
 
+            <div class="form-group" style="margin-bottom: 14px;">
+                <label for="refillNextDateInput">Sljedeće izdavanje dospijeva na datum:</label>
+                <input type="date" id="refillNextDateInput" value="${suggestedNextRefillDate}">
+            </div>
+
             <div class="modal-actions">
                 <button class="btn btn-secondary" onclick="closeRefillModal()">Odustani</button>
                 <button class="btn btn-success" onclick="confirmStandardRefill(${med.id})">
@@ -476,8 +621,11 @@ function confirmStandardRefill(id) {
     const med = lijekovi.find(m => m.id === id);
     if (!med) return;
 
+    const customNextDate = document.getElementById('refillNextDateInput').value;
+
     med.trenutnoPodizanje += 1;
     med.datumPocetka = getTodayIsoString();
+    med.datumSljedecegIzdavanja = customNextDate || addDaysToDate(getTodayIsoString(), med.trajanjeDana);
 
     saveLijekovi();
     closeRefillModal();
@@ -488,9 +636,12 @@ function confirmNewPrescription(id) {
     if (!med) return;
 
     const newMax = parseInt(document.getElementById('newMaxRefillSelect').value, 10);
+    const customNextDate = document.getElementById('newNextRefillDateInput').value;
+
     med.maxPodizanja = newMax;
     med.trenutnoPodizanje = 1;
     med.datumPocetka = getTodayIsoString();
+    med.datumSljedecegIzdavanja = customNextDate || addDaysToDate(getTodayIsoString(), med.trajanjeDana);
 
     saveLijekovi();
     closeRefillModal();
@@ -520,7 +671,7 @@ document.getElementById('importFileInput').addEventListener('change', (e) => {
         try {
             const imported = JSON.parse(event.target.result);
             if (Array.isArray(imported)) {
-                lijekovi = imported;
+                lijekovi = sanitizeData(imported);
                 saveLijekovi();
                 alert('Podaci o lijekovima uspješno su uvezeni!');
             } else {
@@ -552,6 +703,13 @@ document.getElementById('installAppBtn').addEventListener('click', async () => {
     }
     deferredInstallPrompt = null;
     document.getElementById('pwaInstallBanner').classList.add('hidden');
+});
+
+// Immediate display of date on launch
+document.addEventListener('DOMContentLoaded', () => {
+    const todayFormatted = formatDateHr(getTodayIsoString());
+    const dateEl = document.getElementById('todayDate');
+    if (dateEl) dateEl.textContent = todayFormatted;
 });
 
 // App Initialization

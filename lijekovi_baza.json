@@ -1,0 +1,24 @@
+[
+  {
+    "id": 3,
+    "naziv": "Rufixalo 2.5 mg",
+    "datumPocetka": "2026-07-29",
+    "datumSljedecegIzdavanja": "2026-08-26",
+    "brojTableta": 56,
+    "trajanjeDana": 28,
+    "maxPodizanja": 4,
+    "trenutnoPodizanje": 1,
+    "log": ""
+  },
+  {
+    "id": 4,
+    "naziv": "Flosin 0.4 mg",
+    "datumPocetka": "2026-07-29",
+    "datumSljedecegIzdavanja": "2026-08-28",
+    "brojTableta": 30,
+    "trajanjeDana": 30,
+    "maxPodizanja": 2,
+    "trenutnoPodizanje": 1,
+    "log": ""
+  }
+]

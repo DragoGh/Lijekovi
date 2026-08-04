@@ -144,6 +144,13 @@
                     </div>
 
                     <div class="form-group">
+                        <label for="datumSljedecegIzdavanjaInput">Sljedeće izdavanje *</label>
+                        <input type="date" id="datumSljedecegIzdavanjaInput" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
                         <label for="maxPodizanjaInput">Max podizanja na recept *</label>
                         <select id="maxPodizanjaInput" required>
                             <option value="1">1 (Jednokratni recept)</option>
@@ -154,18 +161,23 @@
                             <option value="6">6 podizanja (Ponovljivi)</option>
                         </select>
                     </div>
+
+                    <div class="form-group" id="trenutnoPodizanjeGroup">
+                        <label for="trenutnoPodizanjeInput">Trenutno podizanje</label>
+                        <select id="trenutnoPodizanjeInput">
+                            <option value="1">1. podizanje</option>
+                            <option value="2">2. podizanje</option>
+                            <option value="3">3. podizanje</option>
+                            <option value="4">4. podizanje</option>
+                            <option value="5">5. podizanje</option>
+                            <option value="6">6. podizanje</option>
+                        </select>
+                    </div>
                 </div>
 
-                <div class="form-group" id="trenutnoPodizanjeGroup">
-                    <label for="trenutnoPodizanjeInput">Trenutno podizanje</label>
-                    <select id="trenutnoPodizanjeInput">
-                        <option value="1">1. podizanje</option>
-                        <option value="2">2. podizanje</option>
-                        <option value="3">3. podizanje</option>
-                        <option value="4">4. podizanje</option>
-                        <option value="5">5. podizanje</option>
-                        <option value="6">6. podizanje</option>
-                    </select>
+                <div class="form-group">
+                    <label for="logInput">Log / Napomene o lijeku</label>
+                    <textarea id="logInput" rows="3" placeholder="Slobodan upis općenitih podataka i napomena o lijeku..."></textarea>
                 </div>
 
                 <div class="modal-actions">
