@@ -1,4 +1,4 @@
-// Lijekkovi Drago's Tracker - Core JavaScript Logic
+// Drago's Lijekovi Tracker - Core JavaScript Logic
 
 const MAX_LIJEKOVA = 10;
 const STORAGE_KEY = 'lijekovi_baza_v1';
