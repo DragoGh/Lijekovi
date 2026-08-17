@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lijekovi-tracker-v2';
+const CACHE_NAME = 'lijekovi-tracker-v3';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -34,25 +34,24 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Network-First Strategy for fresh content, with fallback to Cache when offline
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request).then((networkResponse) => {
+    fetch(event.request)
+      .then((networkResponse) => {
         if (
-          !networkResponse ||
-          networkResponse.status !== 200 ||
-          networkResponse.type !== 'basic'
+          networkResponse &&
+          networkResponse.status === 200 &&
+          networkResponse.type === 'basic'
         ) {
-          return networkResponse;
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
         }
-        const responseToCache = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
         return networkResponse;
-      });
-    })
+      })
+      .catch(() => {
+        return caches.match(event.request);
+      })
   );
 });
